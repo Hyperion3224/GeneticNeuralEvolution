@@ -30,6 +30,8 @@ void ProcessTheNewRequest()
                 {
                     nArrClient[nIndex] = nClientSocket;
                     send(nClientSocket, "Connection success", 19, 0);
+                    cout << endl
+                         << "message sent";
                     break;
                 }
             }
@@ -56,6 +58,9 @@ void ProcessTheNewRequest()
 
 int main()
 {
+
+    // network return
+
     int nRet = 0;
 
     // WSA
@@ -68,11 +73,6 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "WSA initialize";
-    }
 
     // open socket
 
@@ -83,12 +83,6 @@ int main()
                   << "Socket failed to open";
         WSACleanup();
         exit(EXIT_FAILURE);
-    }
-    else
-    {
-        cout << endl
-             << "Socket opened at 0x"
-             << nSocket;
     }
 
     srv.sin_family = AF_INET;
@@ -107,23 +101,13 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "ioctlsocket call passed";
-    }
 
     // set sock option
 
     int nOptVal = 0;
     int nOptLen = sizeof(nOptVal);
     nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
-    if (!nRet)
-    {
-        cout << endl
-             << "The setsockopt call successful";
-    }
-    else
+    if (nRet != 0)
     {
         cout << endl
              << "The setsockopt call failed";
@@ -141,11 +125,6 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "Successfully binded to local port";
-    }
 
     // listen
 
@@ -156,11 +135,6 @@ int main()
                   << "Failed to start listening to local port";
         WSACleanup();
         exit(EXIT_FAILURE);
-    }
-    else
-    {
-        cout << endl
-             << "Started listening to local port";
     }
 
     nMaxFd = nSocket;
@@ -186,12 +160,11 @@ int main()
             }
         }
 
-        cout << endl
-             << "Before select calls: " << fr.fd_count << endl;
         nRet = select(nMaxFd + 1, &fr, &fw, &fe, &tv);
         if (nRet > 0)
         {
-            cout << nRet << " on port: " << PORT;
+            cout << endl
+                 << nRet << " on port: " << PORT;
             if (FD_ISSET(nSocket, &fe))
             {
                 cout << endl
@@ -211,19 +184,12 @@ int main()
                 ProcessTheNewRequest();
             }
         }
-        else if (nRet == 0)
-        {
-            cout << "Nothing on port: " << PORT;
-        }
-        else
+        else if (nRet != 0)
         {
             cout << "Socket failure";
             WSACleanup();
             exit(EXIT_FAILURE);
         }
-
-        cout << endl
-             << "After select calls: " << fr.fd_count << endl;
     }
 
     return 0;
