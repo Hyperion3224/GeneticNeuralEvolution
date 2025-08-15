@@ -12,12 +12,67 @@ int nArrClient[8];
 using std::cout;
 using std::endl;
 
+void ProcessNewMessage(int nClientSocket)
+{
+    cout << endl
+         << "Processing the message for client socket " << nClientSocket;
+
+    char buff[257] = {0};
+    int nRet = recv(nClientSocket, buff, 256, 0);
+
+    if (nRet > 0)
+    {
+        buff[nRet] = '\0';
+        cout << endl
+             << "Received: " << buff;
+
+        send(nClientSocket, "Processed your request", 23, 0);
+
+        cout << endl
+             << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+    }
+    else if (nRet == 0)
+    {
+        cout << endl
+             << "Client disconnected.";
+        closesocket(nClientSocket);
+
+        for (int nIndex = 0; nIndex < 8; nIndex++)
+        {
+            if (nArrClient[nIndex] == nClientSocket)
+            {
+                nArrClient[nIndex] = 0;
+                break;
+            }
+        }
+    }
+    else
+    {
+        cout << endl
+             << "Error on recv(). Closing connection.";
+        closesocket(nClientSocket);
+
+        for (int nIndex = 0; nIndex < 8; nIndex++)
+        {
+            if (nArrClient[nIndex] == nClientSocket)
+            {
+                nArrClient[nIndex] = 0;
+                break;
+            }
+        }
+    }
+}
+
 void ProcessTheNewRequest()
 {
     if (FD_ISSET(nSocket, &fr))
     {
         int nLen = sizeof(struct sockaddr);
         int nClientSocket = accept(nSocket, NULL, &nLen);
+        if (nClientSocket > nMaxFd)
+        {
+            nMaxFd = nClientSocket;
+        }
         if (nClientSocket > 0)
         {
             // put it into the client fd set
@@ -30,6 +85,8 @@ void ProcessTheNewRequest()
                 {
                     nArrClient[nIndex] = nClientSocket;
                     send(nClientSocket, "Connection success", 19, 0);
+                    cout << endl
+                         << "message sent";
                     break;
                 }
             }
@@ -40,22 +97,23 @@ void ProcessTheNewRequest()
             }
         }
     }
-    else
+    for (int nIndex = 0; nIndex < 8; nIndex++)
     {
-        for (int nIndex = 0; nIndex < 5; nIndex++)
+        if (FD_ISSET(nArrClient[nIndex], &fr))
         {
-            if (FD_ISSET(nArrClient[nIndex], &fr))
-            {
-                // got the new message from the client
-                // recieved new message
-                // queue for new worker of server to fulfill
-            }
+            ProcessNewMessage(nArrClient[nIndex]);
+            // got the new message from the client
+            // recieved new message
+            // queue for new worker of server to fulfill
         }
     }
 }
 
 int main()
 {
+
+    // network return
+
     int nRet = 0;
 
     // WSA
@@ -68,11 +126,6 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "WSA initialize";
-    }
 
     // open socket
 
@@ -83,12 +136,6 @@ int main()
                   << "Socket failed to open";
         WSACleanup();
         exit(EXIT_FAILURE);
-    }
-    else
-    {
-        cout << endl
-             << "Socket opened at 0x"
-             << nSocket;
     }
 
     srv.sin_family = AF_INET;
@@ -107,23 +154,13 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "ioctlsocket call passed";
-    }
 
     // set sock option
 
     int nOptVal = 0;
     int nOptLen = sizeof(nOptVal);
     nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
-    if (!nRet)
-    {
-        cout << endl
-             << "The setsockopt call successful";
-    }
-    else
+    if (nRet != 0)
     {
         cout << endl
              << "The setsockopt call failed";
@@ -141,11 +178,6 @@ int main()
         WSACleanup();
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        cout << endl
-             << "Successfully binded to local port";
-    }
 
     // listen
 
@@ -156,11 +188,6 @@ int main()
                   << "Failed to start listening to local port";
         WSACleanup();
         exit(EXIT_FAILURE);
-    }
-    else
-    {
-        cout << endl
-             << "Started listening to local port";
     }
 
     nMaxFd = nSocket;
@@ -186,45 +213,19 @@ int main()
             }
         }
 
-        cout << endl
-             << "Before select calls: " << fr.fd_count << endl;
         nRet = select(nMaxFd + 1, &fr, &fw, &fe, &tv);
         if (nRet > 0)
         {
-            cout << nRet << " on port: " << PORT;
-            if (FD_ISSET(nSocket, &fe))
-            {
-                cout << endl
-                     << "there is an exception";
-            }
-
-            if (FD_ISSET(nSocket, &fw))
-            {
-                cout << endl
-                     << "ready to write something";
-            }
-
-            if (FD_ISSET(nSocket, &fr))
-            {
-                cout << endl
-                     << "ready to read";
-                ProcessTheNewRequest();
-            }
+            ProcessTheNewRequest();
         }
-        else if (nRet == 0)
-        {
-            cout << "Nothing on port: " << PORT;
-        }
-        else
+        else if (nRet != 0)
         {
             cout << "Socket failure";
             WSACleanup();
             exit(EXIT_FAILURE);
         }
-
-        cout << endl
-             << "After select calls: " << fr.fd_count << endl;
     }
 
+    WSACleanup();
     return 0;
 }
