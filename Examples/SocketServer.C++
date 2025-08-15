@@ -12,12 +12,67 @@ int nArrClient[8];
 using std::cout;
 using std::endl;
 
+void ProcessNewMessage(int nClientSocket)
+{
+    cout << endl
+         << "Processing the message for client socket " << nClientSocket;
+
+    char buff[257] = {0};
+    int nRet = recv(nClientSocket, buff, 256, 0);
+
+    if (nRet > 0)
+    {
+        buff[nRet] = '\0';
+        cout << endl
+             << "Received: " << buff;
+
+        send(nClientSocket, "Processed your request", 23, 0);
+
+        cout << endl
+             << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+    }
+    else if (nRet == 0)
+    {
+        cout << endl
+             << "Client disconnected.";
+        closesocket(nClientSocket);
+
+        for (int nIndex = 0; nIndex < 8; nIndex++)
+        {
+            if (nArrClient[nIndex] == nClientSocket)
+            {
+                nArrClient[nIndex] = 0;
+                break;
+            }
+        }
+    }
+    else
+    {
+        cout << endl
+             << "Error on recv(). Closing connection.";
+        closesocket(nClientSocket);
+
+        for (int nIndex = 0; nIndex < 8; nIndex++)
+        {
+            if (nArrClient[nIndex] == nClientSocket)
+            {
+                nArrClient[nIndex] = 0;
+                break;
+            }
+        }
+    }
+}
+
 void ProcessTheNewRequest()
 {
     if (FD_ISSET(nSocket, &fr))
     {
         int nLen = sizeof(struct sockaddr);
         int nClientSocket = accept(nSocket, NULL, &nLen);
+        if (nClientSocket > nMaxFd)
+        {
+            nMaxFd = nClientSocket;
+        }
         if (nClientSocket > 0)
         {
             // put it into the client fd set
@@ -42,16 +97,14 @@ void ProcessTheNewRequest()
             }
         }
     }
-    else
+    for (int nIndex = 0; nIndex < 8; nIndex++)
     {
-        for (int nIndex = 0; nIndex < 5; nIndex++)
+        if (FD_ISSET(nArrClient[nIndex], &fr))
         {
-            if (FD_ISSET(nArrClient[nIndex], &fr))
-            {
-                // got the new message from the client
-                // recieved new message
-                // queue for new worker of server to fulfill
-            }
+            ProcessNewMessage(nArrClient[nIndex]);
+            // got the new message from the client
+            // recieved new message
+            // queue for new worker of server to fulfill
         }
     }
 }
@@ -163,26 +216,7 @@ int main()
         nRet = select(nMaxFd + 1, &fr, &fw, &fe, &tv);
         if (nRet > 0)
         {
-            cout << endl
-                 << nRet << " on port: " << PORT;
-            if (FD_ISSET(nSocket, &fe))
-            {
-                cout << endl
-                     << "there is an exception";
-            }
-
-            if (FD_ISSET(nSocket, &fw))
-            {
-                cout << endl
-                     << "ready to write something";
-            }
-
-            if (FD_ISSET(nSocket, &fr))
-            {
-                cout << endl
-                     << "ready to read";
-                ProcessTheNewRequest();
-            }
+            ProcessTheNewRequest();
         }
         else if (nRet != 0)
         {
@@ -192,5 +226,6 @@ int main()
         }
     }
 
+    WSACleanup();
     return 0;
 }
