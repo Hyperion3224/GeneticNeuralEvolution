@@ -1,6 +1,11 @@
-#include <winsock.h>
 #include <iostream>
-#include <string>
+#include <cstring>
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 using std::cin;
 using std::cout;
@@ -11,18 +16,11 @@ using std::string;
 
 int main()
 {
-    WSADATA ws;
-    if (WSAStartup(MAKEWORD(2, 2), &ws) != 0)
-    {
-        std::cerr << "WSA failed to initialize" << endl;
-        return 1;
-    }
 
     int nServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (nServerSocket < 0)
     {
         cout << "Socket creation failed" << endl;
-        WSACleanup();
         return 1;
     }
 
@@ -35,8 +33,7 @@ int main()
     if (connect(nServerSocket, (struct sockaddr *)&srv, sizeof(srv)) < 0)
     {
         cout << "Connection failed" << endl;
-        closesocket(nServerSocket);
-        WSACleanup();
+        close(nServerSocket);
         return 1;
     }
 
@@ -45,9 +42,15 @@ int main()
     // Main send/receive loop
     while (true)
     {
-        string input;
+        string userInput;
+        cout << "Enter message (or 'quit' to exit): ";
+        std::getline(cin, userInput);
 
-        if (send(nServerSocket, input.c_str(), input.size(), 0) < 0)
+        if (userInput == "quit")
+            break;
+
+        // Send message to server
+        if (send(nServerSocket, userInput.c_str(), userInput.size(), 0) < 0)
         {
             cout << "Send failed" << endl;
             break;
@@ -73,7 +76,6 @@ int main()
         }
     }
 
-    closesocket(nServerSocket);
-    WSACleanup();
+    close(nServerSocket);
     return 0;
 }

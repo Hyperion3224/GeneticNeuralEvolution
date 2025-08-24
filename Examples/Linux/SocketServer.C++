@@ -1,5 +1,11 @@
 #include <iostream>
-#include <winsock2.h>
+#include <cstring>
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define PORT 9909
 
@@ -35,7 +41,7 @@ void ProcessNewMessage(int nClientSocket)
     {
         cout << endl
              << "Client disconnected.";
-        closesocket(nClientSocket);
+        close(nClientSocket);
 
         for (int nIndex = 0; nIndex < 8; nIndex++)
         {
@@ -50,7 +56,7 @@ void ProcessNewMessage(int nClientSocket)
     {
         cout << endl
              << "Error on recv(). Closing connection.";
-        closesocket(nClientSocket);
+        close(nClientSocket);
 
         for (int nIndex = 0; nIndex < 8; nIndex++)
         {
@@ -67,7 +73,7 @@ void ProcessTheNewRequest()
 {
     if (FD_ISSET(nSocket, &fr))
     {
-        int nLen = sizeof(struct sockaddr);
+        socklen_t nLen = sizeof(struct sockaddr);
         int nClientSocket = accept(nSocket, NULL, &nLen);
         if (nClientSocket > nMaxFd)
         {
@@ -102,29 +108,27 @@ void ProcessTheNewRequest()
         if (FD_ISSET(nArrClient[nIndex], &fr))
         {
             ProcessNewMessage(nArrClient[nIndex]);
+            // got the new message from the client
+            // recieved new message
+            // queue for new worker of server to fulfill
         }
     }
 }
 
 int main()
 {
+
+    // network return
+
     int nRet = 0;
 
-    WSADATA ws;
-    if (WSAStartup(MAKEWORD(2, 2), &ws) < 0)
-    {
-        std::cerr << endl
-                  << "WSA failed to initialize";
-        WSACleanup();
-        exit(EXIT_FAILURE);
-    }
+    // open socket
 
     nSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (nSocket < 0)
     {
         std::cerr << endl
                   << "Socket failed to open";
-        WSACleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -133,15 +137,7 @@ int main()
     srv.sin_addr.s_addr = INADDR_ANY;
     memset(&(srv.sin_zero), 0, 8);
 
-    u_long optval = 0;
-    nRet = ioctlsocket(nSocket, FIONBIO, &optval);
-    if (nRet != 0)
-    {
-        cout << endl
-             << "ioctlsocket call failed";
-        WSACleanup();
-        exit(EXIT_FAILURE);
-    }
+    // set sock option
 
     int nOptVal = 0;
     int nOptLen = sizeof(nOptVal);
@@ -150,25 +146,26 @@ int main()
     {
         cout << endl
              << "The setsockopt call failed";
-        WSACleanup();
         exit(EXIT_FAILURE);
     }
+
+    // bind
 
     nRet = bind(nSocket, (sockaddr *)&srv, sizeof(sockaddr));
     if (nRet < 0)
     {
         std::cerr << endl
                   << "Failed to bind to local port";
-        WSACleanup();
         exit(EXIT_FAILURE);
     }
+
+    // listen
 
     nRet = listen(nSocket, 8);
     if (nRet < 0)
     {
         std::cerr << endl
                   << "Failed to start listening to local port";
-        WSACleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -203,11 +200,9 @@ int main()
         else if (nRet != 0)
         {
             cout << "Socket failure";
-            WSACleanup();
             exit(EXIT_FAILURE);
         }
     }
 
-    WSACleanup();
     return 0;
 }
