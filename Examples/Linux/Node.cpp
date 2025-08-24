@@ -6,6 +6,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <thread>
+#include <fstream>
 
 using std::cin;
 using std::cout;
@@ -14,65 +17,100 @@ using std::string;
 
 #define PORT 9909
 
+std::string getEthernetIP();
+std::string getRam();
+std::string getThreads();
+
 int main()
 {
 
-    int nServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (nServerSocket < 0)
+    int servSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (servSocket < 0)
     {
-        cout << "Socket creation failed" << endl;
+        perror("socket");
         return 1;
     }
 
-    struct sockaddr_in srv;
+    sockaddr_in srv{};
     srv.sin_family = AF_INET;
-    srv.sin_port = htons(PORT);
-    srv.sin_addr.s_addr = inet_addr("192.168.88.1");
-    memset(&(srv.sin_zero), 0, 8);
+    srv.sin_port = htons(9909);
+    inet_pton(AF_INET, "192.168.88.1", &srv.sin_addr);
 
-    if (connect(nServerSocket, (struct sockaddr *)&srv, sizeof(srv)) < 0)
+    if (connect(servSocket, (sockaddr *)&srv, sizeof(srv)) < 0)
     {
-        cout << "Connection failed" << endl;
-        close(nServerSocket);
+        perror("connect failed");
         return 1;
     }
+    std::cout << "Connected!" << std::endl;
 
-    cout << "Connected to server!" << endl;
+    string connectionMessage = "";
 
-    while (true)
+    connectionMessage += getThreads() + "\n" + getRam() + "\n" + getEthernetIP();
+
+    send(servSocket, connectionMessage.c_str(), connectionMessage.size(), 0);
+
+    close(servSocket);
+
+    return 0;
+}
+
+std::string getRam()
+{
+    std::ifstream meminfo("/proc/meminfo");
+    std::string key;
+    long value;
+    std::string unit;
+    std::string out;
+
+    while (meminfo >> key >> value >> unit)
     {
-        string userInput;
-        cout << "Enter message (or 'quit' to exit): ";
-        std::getline(cin, userInput);
-
-        if (userInput == "quit")
-            break;
-
-        if (send(nServerSocket, userInput.c_str(), userInput.size(), 0) < 0)
+        if (key == "MemTotal:")
         {
-            cout << "Send failed" << endl;
-            break;
+            out += std::to_string(value / 1024);
         }
+    }
+    return out;
+}
 
-        char buff[257] = {0};
-        int nRet = recv(nServerSocket, buff, 256, 0);
-        if (nRet > 0)
+std::string getThreads()
+{
+    std::string out;
+
+    unsigned int threads = std::thread::hardware_concurrency();
+    out += std::to_string(threads);
+
+    return out;
+}
+
+std::string getEthernetIP()
+{
+    struct ifaddrs *ifaddr, *ifa;
+    void *tmpAddrPtr = nullptr;
+
+    std::string out;
+
+    if (getifaddrs(&ifaddr) == -1)
+    {
+        perror("getifaddrs");
+        return out;
+    }
+
+    for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+    {
+        if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET)
         {
-            buff[nRet] = '\0';
-            cout << "Server: " << buff << endl;
-        }
-        else if (nRet == 0)
-        {
-            cout << "Server closed connection" << endl;
-            break;
-        }
-        else
-        {
-            cout << "Receive error" << endl;
-            break;
+            tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            char addressBuffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            if (strcmp(ifa->ifa_name, "enp5s0") == 0 || strcmp(ifa->ifa_name, "enp3s0f0") == 0)
+            {
+                out += addressBuffer;
+                freeifaddrs(ifaddr);
+                return out;
+            }
         }
     }
 
-    close(nServerSocket);
-    return 0;
+    freeifaddrs(ifaddr);
+    return out;
 }
