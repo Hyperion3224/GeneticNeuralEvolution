@@ -81,8 +81,10 @@ void ProcessTheNewRequest()
         }
         if (nClientSocket > 0)
         {
+            // put it into the client fd set
             int nIndex = 0;
 
+            // move this before accepting client so that it takes less resources
             for (nIndex = 0; nIndex < 8; nIndex++)
             {
                 if (nArrClient[nIndex] == 0)
@@ -106,15 +108,23 @@ void ProcessTheNewRequest()
         if (FD_ISSET(nArrClient[nIndex], &fr))
         {
             ProcessNewMessage(nArrClient[nIndex]);
+            // got the new message from the client
+            // recieved new message
+            // queue for new worker of server to fulfill
         }
     }
 }
 
 int main()
 {
+
+    // network return
+
     int nRet = 0;
 
-    nSocket = socket(AF_INET, SOCK_STREAM, 0);
+    // open socket
+
+    nSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (nSocket < 0)
     {
         std::cerr << endl
@@ -127,7 +137,9 @@ int main()
     srv.sin_addr.s_addr = INADDR_ANY;
     memset(&(srv.sin_zero), 0, 8);
 
-    int nOptVal = 0;
+    // set sock option
+
+    int nOptVal = 1;
     int nOptLen = sizeof(nOptVal);
     nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
     if (nRet != 0)
@@ -137,6 +149,8 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    // bind
+
     nRet = bind(nSocket, (sockaddr *)&srv, sizeof(sockaddr));
     if (nRet < 0)
     {
@@ -144,6 +158,8 @@ int main()
                   << "Failed to bind to local port";
         exit(EXIT_FAILURE);
     }
+
+    // listen
 
     nRet = listen(nSocket, 8);
     if (nRet < 0)
@@ -184,9 +200,9 @@ int main()
         else if (nRet != 0)
         {
             cout << "Socket failure";
-
             exit(EXIT_FAILURE);
         }
     }
+
     return 0;
 }

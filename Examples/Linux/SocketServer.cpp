@@ -139,7 +139,7 @@ int main()
 
     // set sock option
 
-    int nOptVal = 0;
+    int nOptVal = 1;
     int nOptLen = sizeof(nOptVal);
     nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
     if (nRet != 0)

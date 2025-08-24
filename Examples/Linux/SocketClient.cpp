@@ -27,7 +27,7 @@ int main()
     struct sockaddr_in srv;
     srv.sin_family = AF_INET;
     srv.sin_port = htons(PORT);
-    srv.sin_addr.s_addr = inet_addr("127.0.0.1");
+    srv.sin_addr.s_addr = inet_addr("192.168.88.1");
     memset(&(srv.sin_zero), 0, 8);
 
     if (connect(nServerSocket, (struct sockaddr *)&srv, sizeof(srv)) < 0)
