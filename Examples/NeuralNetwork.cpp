@@ -217,8 +217,10 @@ namespace NeuralNetwork
         bool equalsSize(const Tensor &other) const
         {
             if (dims != other.dims)
+            {
                 throw std::out_of_range("Dimension mismatch");
-            return false;
+                return false;
+            }
             for (int i = 0; i < dims; i++)
                 if (shape[i] != other.shape[i])
                 {
@@ -310,37 +312,6 @@ namespace NeuralNetwork
         }
     };
 
-    struct Sequential
-    {
-        std::vector<Layer *> layers;
-
-        void add(Layer *layer)
-        {
-            layers.push_back(layer);
-        }
-
-        Tensor forward(const Tensor &input)
-        {
-            Tensor x = input;
-            for (auto l : layers)
-                x = l->forward(x);
-            return x;
-        }
-
-        void backward(const Tensor &grad_output, float lr)
-        {
-            Tensor grad = grad_output;
-            for (int i = layers.size() - 1; i >= 0; i--)
-                grad = layers[i]->backward(grad, lr);
-        }
-
-        ~Sequential()
-        {
-            for (auto l : layers)
-                delete l;
-        }
-    };
-
     struct ReLu : public Layer
     {
         Tensor last_input;
@@ -420,16 +391,35 @@ namespace NeuralNetwork
             return grad_input;
         }
     };
-}
 
-int main()
-{
-    NeuralNetwork::Sequential model;
+    struct Sequential
+    {
+        std::vector<Layer *> layers;
 
-    model.add(new NeuralNetwork::Dense(3, 4));
-    model.add(new NeuralNetwork::LeakyReLU(0.05f));
-    model.add(new NeuralNetwork::Dense(4, 1));
-    model.add(new NeuralNetwork::Sigmoid());
+        void add(Layer *layer)
+        {
+            layers.push_back(layer);
+        }
 
-    return 0;
+        Tensor forward(const Tensor &input)
+        {
+            Tensor x = input;
+            for (auto layer : layers)
+                x = layer->forward(x);
+            return x;
+        }
+
+        void backward(const Tensor &grad_output, float lr)
+        {
+            Tensor grad = grad_output;
+            for (int i = layers.size() - 1; i >= 0; i--)
+                grad = layers[i]->backward(grad, lr);
+        }
+
+        ~Sequential()
+        {
+            for (auto l : layers)
+                delete l;
+        }
+    };
 }
