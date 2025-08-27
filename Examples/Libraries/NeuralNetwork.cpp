@@ -3,9 +3,9 @@
 #include <optional>
 #include <vector>
 #include <cmath>
-
 #include <iostream>
 #include <cstring>
+#include <./ThreadPool.hpp>
 
 namespace NeuralNetwork
 {
@@ -253,6 +253,11 @@ namespace NeuralNetwork
         virtual Tensor forward(const Tensor &input) = 0;
         virtual Tensor backward(const Tensor &grad_output, float learning_rate) = 0;
         virtual ~Layer() = default;
+
+        void virtual SetPool(ThreadPool *p) { pool = p; }
+
+    protected:
+        ThreadPool *pool = nullptr;
     };
 
     struct Dense : public Layer
@@ -395,9 +400,13 @@ namespace NeuralNetwork
     struct Sequential
     {
         std::vector<Layer *> layers;
+        ThreadPool &pool;
+
+        Sequential(ThreadPool &p) : pool(p) {}
 
         void add(Layer *layer)
         {
+            layer->SetPool(&pool);
             layers.push_back(layer);
         }
 

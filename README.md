@@ -21,6 +21,6 @@ Master computer will send each node configs that discloses the size of arrays th
 Each computer will then run their newly configured generalized program and when the have successfully opened a connection to the correct addresses ping the master computer and await a response. 
 Master computer will then send the loaded weights and biases for each node to each node respectively. If there is no model being loaded and this is the first time the master computer will send an empty array singling to the nodes to just randomly assign numbers to their arrays.
 After that the master computer will start sending data through to the first node, it will process then send it through and so on until the last computer has had a chance. And after the first node has received the correct amount of data it will start back propagation.
-
+The way the program will be structured on each node is a worker master queue system where on each node there is a master thread that creates and manages a work queue that the worker nodes (all other nodes) will pull and work from. Once a set of tasks is done the master thread will communicate that to the master computer who will then instruct it when to send to the next computer. The master thread will have 2 to 3 sockets open connecting to the previous next and master computers
 
 - Jaxon Durken

@@ -9,6 +9,8 @@
 #include <ifaddrs.h>
 #include <thread>
 #include <fstream>
+#include "../Libraries/ThreadPool.hpp"
+#include "../Libraries/NeuralNetwork.hpp"
 
 using std::cin;
 using std::cout;
@@ -18,11 +20,12 @@ using std::string;
 #define PORT 9909
 
 std::string getEthernetIP();
-std::string getRam();
-std::string getThreads();
+unsigned int getRam();
+unsigned int getThreads();
 
 int main()
 {
+    int WorkerThreads = getThreads() - 1;
 
     int servSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (servSocket < 0)
@@ -31,12 +34,12 @@ int main()
         return 1;
     }
 
-    sockaddr_in srv{};
-    srv.sin_family = AF_INET;
-    srv.sin_port = htons(9909);
-    inet_pton(AF_INET, "192.168.88.1", &srv.sin_addr);
+    sockaddr_in MasterComputer{};
+    MasterComputer.sin_family = AF_INET;
+    MasterComputer.sin_port = htons(9909);
+    inet_pton(AF_INET, "192.168.88.1", &MasterComputer.sin_addr);
 
-    if (connect(servSocket, (sockaddr *)&srv, sizeof(srv)) < 0)
+    if (connect(servSocket, (sockaddr *)&MasterComputer, sizeof(MasterComputer)) < 0)
     {
         perror("connect failed");
         return 1;
@@ -44,42 +47,37 @@ int main()
     std::cout << "Connected!" << std::endl;
 
     string connectionMessage = "";
-
-    connectionMessage += getThreads() + "\n" + getRam() + "\n" + getEthernetIP();
-
+    connectionMessage += std::to_string(WorkerThreads) + "\n" + std::to_string(getRam()) + "\n" + getEthernetIP();
     send(servSocket, connectionMessage.c_str(), connectionMessage.size(), 0);
 
     close(servSocket);
-
     return 0;
 }
 
-std::string getRam()
+// functions
+
+unsigned int getRam()
 {
     std::ifstream meminfo("/proc/meminfo");
     std::string key;
     long value;
     std::string unit;
-    std::string out;
+    unsigned int out;
 
     while (meminfo >> key >> value >> unit)
     {
         if (key == "MemTotal:")
         {
-            out += std::to_string(value / 1024);
+            out += (value / 1024);
         }
     }
     return out;
 }
 
-std::string getThreads()
+unsigned int getThreads()
 {
-    std::string out;
-
     unsigned int threads = std::thread::hardware_concurrency();
-    out += std::to_string(threads);
-
-    return out;
+    return threads;
 }
 
 std::string getEthernetIP()
@@ -102,7 +100,7 @@ std::string getEthernetIP()
             tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
             char addressBuffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-            if (strcmp(ifa->ifa_name, "enp5s0") == 0 || strcmp(ifa->ifa_name, "enp3s0f0") == 0)
+            if (strcmp(ifa->ifa_name, "enp5s0") == 0 || strcmp(ifa->ifa_name, "enp3s0f0") == 0 || strcmp(ifa->ifa_name, "enp4s0f0") == 0)
             {
                 out += addressBuffer;
                 freeifaddrs(ifaddr);

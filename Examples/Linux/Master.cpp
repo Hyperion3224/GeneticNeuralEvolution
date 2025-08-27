@@ -18,6 +18,90 @@ int nArrClient[8];
 using std::cout;
 using std::endl;
 
+void ProcessTheNewRequest();
+void ProcessNewMessage(int nClientSocket);
+
+int main()
+{
+    int nRet = 0;
+
+    nSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (nSocket < 0)
+    {
+        std::cerr << endl
+                  << "Socket failed to open";
+        exit(EXIT_FAILURE);
+    }
+
+    srv.sin_family = AF_INET;
+    srv.sin_port = htons(PORT);
+    srv.sin_addr.s_addr = INADDR_ANY;
+    memset(&(srv.sin_zero), 0, 8);
+
+    int nOptVal = 1;
+    int nOptLen = sizeof(nOptVal);
+    nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
+    if (nRet != 0)
+    {
+        cout << endl
+             << "The setsockopt call failed";
+        exit(EXIT_FAILURE);
+    }
+
+    nRet = bind(nSocket, (sockaddr *)&srv, sizeof(sockaddr));
+    if (nRet < 0)
+    {
+        std::cerr << endl
+                  << "Failed to bind to local port";
+        exit(EXIT_FAILURE);
+    }
+
+    nRet = listen(nSocket, 8);
+    if (nRet < 0)
+    {
+        std::cerr << endl
+                  << "Failed to start listening to local port";
+        exit(EXIT_FAILURE);
+    }
+
+    nMaxFd = nSocket;
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+
+    while (true)
+    {
+        FD_ZERO(&fr);
+        FD_ZERO(&fw);
+        FD_ZERO(&fe);
+
+        FD_SET(nSocket, &fr);
+        FD_SET(nSocket, &fe);
+
+        for (int nIndex = 0; nIndex < 8; nIndex++)
+        {
+            if (nArrClient[nIndex] != 0)
+            {
+                FD_SET(nArrClient[nIndex], &fr);
+                FD_SET(nArrClient[nIndex], &fe);
+            }
+        }
+
+        nRet = select(nMaxFd + 1, &fr, &fw, &fe, &tv);
+        if (nRet > 0)
+        {
+            ProcessTheNewRequest();
+        }
+        else if (nRet != 0)
+        {
+            cout << "Socket failure";
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return 0;
+}
+
 void ProcessNewMessage(int nClientSocket)
 {
     cout << endl
@@ -109,85 +193,4 @@ void ProcessTheNewRequest()
             ProcessNewMessage(nArrClient[nIndex]);
         }
     }
-}
-
-int main()
-{
-    int nRet = 0;
-
-    nSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (nSocket < 0)
-    {
-        std::cerr << endl
-                  << "Socket failed to open";
-        exit(EXIT_FAILURE);
-    }
-
-    srv.sin_family = AF_INET;
-    srv.sin_port = htons(PORT);
-    srv.sin_addr.s_addr = INADDR_ANY;
-    memset(&(srv.sin_zero), 0, 8);
-
-    int nOptVal = 1;
-    int nOptLen = sizeof(nOptVal);
-    nRet = setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, (const char *)&nOptVal, nOptLen);
-    if (nRet != 0)
-    {
-        cout << endl
-             << "The setsockopt call failed";
-        exit(EXIT_FAILURE);
-    }
-
-    nRet = bind(nSocket, (sockaddr *)&srv, sizeof(sockaddr));
-    if (nRet < 0)
-    {
-        std::cerr << endl
-                  << "Failed to bind to local port";
-        exit(EXIT_FAILURE);
-    }
-
-    nRet = listen(nSocket, 8);
-    if (nRet < 0)
-    {
-        std::cerr << endl
-                  << "Failed to start listening to local port";
-        exit(EXIT_FAILURE);
-    }
-
-    nMaxFd = nSocket;
-    struct timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-
-    while (true)
-    {
-        FD_ZERO(&fr);
-        FD_ZERO(&fw);
-        FD_ZERO(&fe);
-
-        FD_SET(nSocket, &fr);
-        FD_SET(nSocket, &fe);
-
-        for (int nIndex = 0; nIndex < 8; nIndex++)
-        {
-            if (nArrClient[nIndex] != 0)
-            {
-                FD_SET(nArrClient[nIndex], &fr);
-                FD_SET(nArrClient[nIndex], &fe);
-            }
-        }
-
-        nRet = select(nMaxFd + 1, &fr, &fw, &fe, &tv);
-        if (nRet > 0)
-        {
-            ProcessTheNewRequest();
-        }
-        else if (nRet != 0)
-        {
-            cout << "Socket failure";
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    return 0;
 }
