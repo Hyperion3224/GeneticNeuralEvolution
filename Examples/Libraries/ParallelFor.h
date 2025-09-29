@@ -12,14 +12,19 @@ inline void ParallelFor(ThreadPool &pool, int64_t begin, int64_t end,
     if (N <= 0)
         return;
 
-    int threads = std::max(1u, std::thread::hardware_concurrency());
+    int threads = std::max((size_t)1, pool.size());
     int numTasks = (desiredTasks > 0) ? desiredTasks : threads * 4;
-    numTasks = (int)std::min<int64_t>(numTasks, N);
+    numTasks = std::max<int64_t>(1, std::min<int64_t>(numTasks, N));
+
+    const int64_t minChunk = 8192; // tweak if needed
+    const int maxTasksByGrain = int((N + minChunk - 1) / minChunk);
+    if (maxTasksByGrain > 0)
+        numTasks = std::min(numTasks, maxTasksByGrain);
 
     int64_t chunk = (N + numTasks - 1) / numTasks;
 
-    std::vector<std::future<void>> futs;
-    futs.reserve(numTasks);
+    std::vector<std::future<void>> futures;
+    futures.reserve(numTasks);
 
     for (int t = 0; t < numTasks; ++t)
     {
@@ -28,9 +33,9 @@ inline void ParallelFor(ThreadPool &pool, int64_t begin, int64_t end,
         if (s >= e)
             break;
 
-        futs.push_back(pool.enqueue([=]
-                                    { fn(s, e); }));
+        futures.push_back(pool.enqueue([=]
+                                       { fn(s, e); }));
     }
-    for (auto &f : futs)
-        f.get();
+    for (auto &future : futures)
+        future.get();
 }

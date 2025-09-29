@@ -6,6 +6,8 @@
 #include <iostream>
 #include <cstring>
 #include <./ThreadPool.hpp>
+#include <./ParallelFor.h>
+#include <./Ops_Parallel.h>
 
 namespace NeuralNetwork
 {
@@ -15,6 +17,8 @@ namespace NeuralNetwork
         int *shape;
         int *strides;
         float *data;
+
+        ThreadPool *pool = nullptr;
 
         Tensor()
             : dims(0), shape(nullptr), strides(nullptr), data(nullptr) {}
@@ -129,8 +133,8 @@ namespace NeuralNetwork
             equalsSize(other);
             Tensor result(dims, shape);
             int len = length();
-            for (int i = 0; i < len; i++)
-                result.data[i] = data[i] * other.data[i];
+
+            binary_map(new ThreadPool(1), result.data, data, other.data, len, [](float a, float b){return a*b;});
 
             return result;
         }
@@ -245,6 +249,11 @@ namespace NeuralNetwork
                 }
             }
             return index;
+        }
+
+        void setPool(ThreadPool *_pool)
+        {
+            pool = _pool;
         }
     };
 
