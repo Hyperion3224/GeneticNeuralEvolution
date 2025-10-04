@@ -21,10 +21,10 @@ namespace NeuralNetwork
         ThreadPool *pool = nullptr;
 
         Tensor()
-            : dims(0), shape(nullptr), strides(nullptr), data(nullptr) {}
+            : dims(0), pool(nullptr), shape(nullptr), strides(nullptr), data(nullptr) {}
 
-        Tensor(int dims_, const int *shape_)
-            : dims(dims_)
+        Tensor(int dims_, ThreadPool *pool_, const int *shape_)
+            : dims(dims_), pool(pool_)
         {
             shape = new int[dims];
             for (int i = 0; i < dims; i++)
@@ -42,7 +42,7 @@ namespace NeuralNetwork
         }
 
         Tensor(const Tensor &original)
-            : dims(original.dims)
+            : dims(original.dims), pool(original.pool)
         {
             shape = new int[dims];
             strides = new int[dims];
@@ -63,6 +63,7 @@ namespace NeuralNetwork
             delete[] strides;
 
             dims = other.dims;
+            pool = other.pool;
 
             shape = new int[dims];
             strides = new int[dims];
@@ -76,7 +77,7 @@ namespace NeuralNetwork
         }
 
         Tensor(Tensor &&other) noexcept
-            : dims(other.dims), shape(other.shape), strides(other.strides), data(other.data)
+            : dims(other.dims), pool(other.pool), shape(other.shape), strides(other.strides), data(other.data)
         {
             other.shape = nullptr;
             other.strides = nullptr;
@@ -94,6 +95,7 @@ namespace NeuralNetwork
             delete[] strides;
 
             dims = other.dims;
+            pool = other.pool;
             shape = other.shape;
             strides = other.strides;
             data = other.data;
@@ -131,10 +133,11 @@ namespace NeuralNetwork
         Tensor operator*(const Tensor &other)
         {
             equalsSize(other);
-            Tensor result(dims, shape);
+            Tensor result(dims, pool, shape);
             int len = length();
 
-            binary_map(new ThreadPool(1), result.data, data, other.data, len, [](float a, float b){return a*b;});
+            binary_map(pool, result.data, data, other.data, len, [](float a, float b)
+                       { return a * b; });
 
             return result;
         }
@@ -145,35 +148,48 @@ namespace NeuralNetwork
             {
                 if (length() != other.length())
                     throw std::out_of_range("Vector length mismatch");
-                float sum = 0;
-                for (int i = 0; i < length(); i++)
-                    sum += data[i] * other.data[i];
-                Tensor res(1, new int[1]{1}); // scalar tensor
+                Tensor res(1, pool, new int[1]{1}); // scalar
+                res.pool = pool ? pool : other.pool;
+                float sum = 0.f;
+
+                if (res.pool && res.pool->size() > 1)
+                {
+                    const int n = length();
+                    const int tasks = std::max<int>(1, int(res.pool->size()) * 4);
+                    std::vector<float> partial(tasks, 0.f);
+                    ForEachRange(res.pool, 0, tasks, [&](int64_t s, int64_t e)
+                                 {
+                for (int t=int(s); t<int(e); ++t) {
+                    int i0 = int((int64_t(n) *  t    ) / tasks);
+                    int i1 = int((int64_t(n) * (t+1)) / tasks);
+                    float acc = 0.f;
+                    for (int i=i0; i<i1; ++i) acc += data[i] * other.data[i];
+                    partial[t] += acc;
+                } });
+                    for (float v : partial)
+                        sum += v;
+                }
+                else
+                {
+                    for (int i = 0; i < length(); ++i)
+                        sum += data[i] * other.data[i];
+                }
                 res.data[0] = sum;
                 return res;
             }
             else if (dims == 2 && other.dims == 2)
             {
                 if (shape[1] != other.shape[0])
-                    throw std::out_of_range("Matrix shapes are incompatible for multiplication");
-
+                    throw std::out_of_range("Matrix shapes are incompatible");
                 int thisRows = shape[0], thisCol = shape[1], otherCols = other.shape[1];
                 int newShape[2] = {thisRows, otherCols};
-                Tensor res(2, newShape);
-                for (int i = 0; i < thisRows; i++)
-                {
-                    for (int j = 0; j < otherCols; j++)
-                    {
-                        float sum = 0.0f;
-                        for (int k = 0; k < thisCol; k++)
-                        {
-                            int idxA = i * strides[0] + k * strides[1];
-                            int idxB = k * other.strides[0] + j * other.strides[1];
-                            sum += data[idxA] * other.data[idxB];
-                        }
-                        res.data[i * res.strides[0] + j * res.strides[1]] = sum;
-                    }
-                }
+                Tensor res(2, pool, newShape);
+
+                // Use parallel row kernel
+                matmul_rows(res.pool,
+                            /*A*/ data, thisRows, thisCol, strides[0], strides[1],
+                            /*B*/ other.data, otherCols, other.strides[0], other.strides[1],
+                            /*C*/ res.data, res.strides[0], res.strides[1]);
                 return res;
             }
             else
@@ -191,10 +207,10 @@ namespace NeuralNetwork
         Tensor operator+(const Tensor &other) const
         {
             equalsSize(other);
-            Tensor res(dims, shape);
+            Tensor res(dims, pool, shape);
             int len = length();
-            for (int i = 0; i < len; i++)
-                res.data[i] = data[i] + other.data[i];
+            binary_map(pool, res.data, data, other.data, len, [](float a, float b)
+                       { return a + b; });
 
             return res;
         }
@@ -202,10 +218,10 @@ namespace NeuralNetwork
         Tensor operator-(const Tensor &other) const
         {
             equalsSize(other);
-            Tensor res(dims, shape);
+            Tensor res(dims, pool, shape);
             int len = length();
-            for (int i = 0; i < len; i++)
-                res.data[i] = data[i] - other.data[i];
+            binary_map(pool, res.data, data, other.data, len, [](float a, float b)
+                       { return a - b; });
 
             return res;
         }
@@ -276,13 +292,18 @@ namespace NeuralNetwork
         Tensor last_input;
 
         Dense(int input_size, int output_size)
-            : weights(2, new int[2]{input_size, output_size}), bias(1, new int[1]{output_size})
+            : weights(2, pool, new int[2]{input_size, output_size}), bias(1, pool, new int[1]{output_size})
         {
             // Initialize weights and biases randomly
-            for (int i = 0; i < weights.length(); i++)
-                weights.data[i] = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
-            for (int i = 0; i < bias.length(); i++)
-                bias.data[i] = 0;
+            unary_map(pool, weights.data, weights.data, weights.length(), [](float a)
+                      { return ((float)rand() / RAND_MAX - 0.5f) * 0.1f; });
+            unary_map(pool, bias.data, bias.data, weights.length(), [](float a)
+                      { return ((float)rand() / RAND_MAX - 0.5f) * 0.1f; });
+
+            // for (int i = 0; i < weights.length(); i++)
+            //     weights.data[i] = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+            // for (int i = 0; i < bias.length(); i++)
+            //     bias.data[i] = 0;
         }
 
         Tensor forward(const Tensor &input) override
@@ -299,14 +320,12 @@ namespace NeuralNetwork
             Tensor grad_weights = (last_input % grad_output); // dL/dW
             Tensor grad_bias = grad_output;                   // simple sum could be applied if batch
 
-            // Compute gradient wrt input to pass back
             Tensor grad_input = grad_output.dot(transpose(weights));
 
-            // Update parameters
-            for (int i = 0; i < weights.length(); i++)
-                weights.data[i] -= learning_rate * grad_weights.data[i];
-            for (int i = 0; i < bias.length(); i++)
-                bias.data[i] -= learning_rate * grad_bias.data[i];
+            binary_map(pool, weights.data, grad_weights.data, weights.data, weights.length(), [learning_rate](float a, float b)
+                       { return a - (learning_rate * b); });
+            binary_map(pool, bias.data, grad_bias.data, bias.data, bias.length(), [learning_rate](float a, float b)
+                       { return a - (learning_rate * b); });
 
             return grad_input;
         }
@@ -317,7 +336,7 @@ namespace NeuralNetwork
             if (t.dims != 2)
                 throw std::runtime_error("Only 2D transpose supported");
             int newShape[2] = {t.shape[1], t.shape[0]};
-            Tensor result(2, newShape);
+            Tensor result(2, pool, newShape);
             for (int i = 0; i < t.shape[0]; i++)
                 for (int j = 0; j < t.shape[1]; j++)
                     result.data[j * result.strides[0] + i * result.strides[1]] =
@@ -333,19 +352,17 @@ namespace NeuralNetwork
         Tensor forward(const Tensor &input) override
         {
             last_input = input;
-            Tensor output = input;
-            for (int i = 0; i < input.length(); i++)
-                output.data[i] = std::max(0.0f, input.data[i]);
+            Tensor output = Tensor(input.dims, pool, input.shape);
+            unary_map(pool, output.data, last_input.data, last_input.length(), [](float a)
+                      { return std::max(0.0f, a); });
             return output;
         }
 
         Tensor backward(const Tensor &grad_output, float) override
         {
             Tensor grad_input = grad_output;
-            for (int i = 0; i < grad_input.length(); i++)
-                if (last_input.data[i] <= 0)
-                    grad_input.data[i] = 0;
-            return grad_input;
+            binary_map(pool, grad_input.data, last_input.data, grad_output.data, grad_output.length(), [](float a, float b)
+                       { return a > 0.f ? b : 0.f; });
         }
     };
 
@@ -355,23 +372,20 @@ namespace NeuralNetwork
 
         Tensor forward(const Tensor &input) override
         {
-            last_output = input; // copy shape
-            for (int i = 0; i < input.length(); i++)
-            {
-                float val = input.data[i];
-                last_output.data[i] = 1.0f / (1.0f + std::exp(-val));
-            }
+            last_output = Tensor(input.dims, pool, input.shape);
+            unary_map(pool, last_output.data, input.data, input.length(), [](float a)
+                      {
+                if (a >= 0.f) { float z = std::exp(-a); return 1.f / (1.f + z); }
+                else          { float z = std::exp(a);  return z / (1.f + z); } });
             return last_output;
         }
 
         Tensor backward(const Tensor &grad_output, float /*lr*/) override
         {
             Tensor grad_input = grad_output; // same shape
-            for (int i = 0; i < grad_input.length(); i++)
-            {
-                float sigmoid_val = last_output.data[i];
-                grad_input.data[i] *= sigmoid_val * (1.0f - sigmoid_val);
-            }
+
+            binary_map(pool, grad_input.data, grad_input.data, last_output.data, grad_output.length(), [](float a, float b)
+                       { return a * (b * (1.f - b)); });
             return grad_input;
         }
     };
@@ -386,22 +400,20 @@ namespace NeuralNetwork
         Tensor forward(const Tensor &input) override
         {
             last_input = input;
-            Tensor output = input;
-            for (int i = 0; i < input.length(); i++)
-            {
-                float val = input.data[i];
-                output.data[i] = (val > 0) ? val : alpha * val;
-            }
+            Tensor output = Tensor(input.dims, pool, input.shape);
+
+            unary_map(pool, output.data, input.data, input.length(), [alpha = this->alpha](float a)
+                      { return (a > 0) ? a : alpha * a; });
+
             return output;
         }
 
         Tensor backward(const Tensor &grad_output, float /*lr*/) override
         {
             Tensor grad_input = grad_output;
-            for (int i = 0; i < grad_input.length(); i++)
-            {
-                grad_input.data[i] *= (last_input.data[i] > 0) ? 1.0f : alpha;
-            }
+
+            binary_map(pool, grad_input.data, grad_input.data, last_input.data, grad_input.length(), [alpha = this->alpha](float a, float b)
+                       { return a * ((b > 0) ? 1.f : alpha); });
             return grad_input;
         }
     };
