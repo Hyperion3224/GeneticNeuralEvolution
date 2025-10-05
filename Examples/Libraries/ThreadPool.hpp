@@ -33,6 +33,11 @@ private:
     void stop() noexcept;
 };
 
+inline size_t ThreadPool::size()
+{
+    return mThreads.size();
+}
+
 inline ThreadPool::ThreadPool(size_t numThreads)
 {
     start(numThreads);

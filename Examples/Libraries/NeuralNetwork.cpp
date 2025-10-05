@@ -5,9 +5,12 @@
 #include <cmath>
 #include <iostream>
 #include <cstring>
-#include <./ThreadPool.hpp>
-#include <./ParallelFor.h>
-#include <./Ops_Parallel.h>
+#include <algorithm>
+#include <random>
+
+#include "./ThreadPool.hpp"
+#include "./ParallelFor.h"
+#include "./Ops_Parallel.h"
 
 namespace NeuralNetwork
 {
@@ -29,6 +32,28 @@ namespace NeuralNetwork
             shape = new int[dims];
             for (int i = 0; i < dims; i++)
                 shape[i] = shape_[i];
+
+            data = new float[length()]();
+
+            strides = new int[dims];
+            int lastStridesIndex = dims - 1;
+            strides[lastStridesIndex] = 1;
+            for (int i = lastStridesIndex - 1; i >= 0; i--)
+            {
+                strides[i] = strides[i + 1] * shape[i + 1];
+            }
+        }
+
+        Tensor(int dims_, ThreadPool *pool_, std::initializer_list<int> shape_)
+            : dims(dims_), pool(pool_)
+        {
+            if ((int)shape_.size() != dims)
+                throw std::invalid_argument("dims != shape_.size()");
+            shape = new int[dims];
+
+            int i = 0;
+            for (int s : shape_)
+                shape[i++] = s;
 
             data = new float[length()]();
 
@@ -130,7 +155,7 @@ namespace NeuralNetwork
             data[toLinearIndex(coordinates)] = value;
         }
 
-        Tensor operator*(const Tensor &other)
+        Tensor operator*(const Tensor &other) const
         {
             equalsSize(other);
             Tensor result(dims, pool, shape);
@@ -148,7 +173,7 @@ namespace NeuralNetwork
             {
                 if (length() != other.length())
                     throw std::out_of_range("Vector length mismatch");
-                Tensor res(1, pool, new int[1]{1}); // scalar
+                Tensor res(1, pool, {1}); // scalar
                 res.pool = pool ? pool : other.pool;
                 float sum = 0.f;
 
@@ -199,7 +224,7 @@ namespace NeuralNetwork
         }
 
         // dot product
-        Tensor operator%(const Tensor &other)
+        Tensor operator%(const Tensor &other) const
         {
             return dot(other);
         }
@@ -226,9 +251,9 @@ namespace NeuralNetwork
             return res;
         }
 
-        int length() const
+        uint64_t length() const
         {
-            int length = 1;
+            uint64_t length = 1;
             for (int i = 0; i < dims; i++)
                 length *= shape[i];
             return length;
@@ -239,13 +264,11 @@ namespace NeuralNetwork
             if (dims != other.dims)
             {
                 throw std::out_of_range("Dimension mismatch");
-                return false;
             }
             for (int i = 0; i < dims; i++)
                 if (shape[i] != other.shape[i])
                 {
                     throw std::out_of_range("Shape mismatch");
-                    return false;
                 }
             return true;
         }
@@ -279,7 +302,7 @@ namespace NeuralNetwork
         virtual Tensor backward(const Tensor &grad_output, float learning_rate) = 0;
         virtual ~Layer() = default;
 
-        void virtual SetPool(ThreadPool *p) { pool = p; }
+        virtual void SetPool(ThreadPool *p) { pool = p; }
 
     protected:
         ThreadPool *pool = nullptr;
@@ -292,40 +315,73 @@ namespace NeuralNetwork
         Tensor last_input;
 
         Dense(int input_size, int output_size)
-            : weights(2, pool, new int[2]{input_size, output_size}), bias(1, pool, new int[1]{output_size})
+            : weights(2, pool, {input_size, output_size}), bias(1, pool, {output_size})
         {
-            // Initialize weights and biases randomly
-            unary_map(pool, weights.data, weights.data, weights.length(), [](float a)
-                      { return ((float)rand() / RAND_MAX - 0.5f) * 0.1f; });
-            unary_map(pool, bias.data, bias.data, weights.length(), [](float a)
-                      { return ((float)rand() / RAND_MAX - 0.5f) * 0.1f; });
+            std::mt19937 rng(123);
+            std::uniform_real_distribution<float> dist(-0.05f, 0.05f);
+            unary_map(pool, weights.data, weights.data, weights.length(),
+                      [&](float)
+                      { return dist(rng); });
+            unary_map(pool, bias.data, bias.data, bias.length(), [](float a)
+                      { return 0.f; });
+        }
 
-            // for (int i = 0; i < weights.length(); i++)
-            //     weights.data[i] = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
-            // for (int i = 0; i < bias.length(); i++)
-            //     bias.data[i] = 0;
+        void SetPool(ThreadPool *pool_) override
+        {
+            pool = pool_;
+            weights.setPool(pool_);
+            bias.setPool(pool_);
+            last_input.setPool(pool_);
         }
 
         Tensor forward(const Tensor &input) override
         {
             last_input = input; // store for backward
-            Tensor output = input.dot(weights) + bias;
-            return output;
+            Tensor output = input.dot(weights);
+            if (output.dims == 2 && bias.dims == 1)
+            {
+                add_bias_broadcast(pool,
+                                   /*Y*/ output.data, /*b*/ bias.data,
+                                   /*B*/ output.shape[0], /*O*/ output.shape[1],
+                                   /*Ystr0*/ output.strides[0], /*Ystr1*/ output.strides[1]);
+                return output;
+            }
+
+            return output + bias;
         }
 
-        Tensor backward(const Tensor &grad_output, float learning_rate) override
+        Tensor backward(const Tensor &grad_output, float lr) override
         {
-            // grad_output is dL/dY
-            // Compute gradient wrt weights and bias
-            Tensor grad_weights = (last_input % grad_output); // dL/dW
-            Tensor grad_bias = grad_output;                   // simple sum could be applied if batch
-
+            // dX
             Tensor grad_input = grad_output.dot(transpose(weights));
 
-            binary_map(pool, weights.data, grad_weights.data, weights.data, weights.length(), [learning_rate](float a, float b)
-                       { return a - (learning_rate * b); });
-            binary_map(pool, bias.data, grad_bias.data, bias.data, bias.length(), [learning_rate](float a, float b)
-                       { return a - (learning_rate * b); });
+            // dW = X^T · dY
+            Tensor Xt = transpose(last_input);
+            Tensor grad_weights = Xt.dot(grad_output);
+
+            // db = sum over rows
+            Tensor grad_bias(1, pool, bias.shape);
+            std::fill(grad_bias.data, grad_bias.data + grad_bias.length(), 0.f);
+            if (grad_output.dims == 2)
+            {
+                reduce_sum_rows(pool, grad_output.data,
+                                /*B*/ grad_output.shape[0], /*O*/ grad_output.shape[1],
+                                /*Xstr0*/ grad_output.strides[0], /*Xstr1*/ grad_output.strides[1],
+                                /*out*/ grad_bias.data);
+            }
+            else
+            {
+                // no batch
+                std::memcpy(grad_bias.data, grad_output.data, sizeof(float) * grad_bias.length());
+            }
+
+            // SGD update
+            binary_map(pool, weights.data, weights.data, grad_weights.data, weights.length(),
+                       [=](float w, float gw)
+                       { return w - lr * gw; });
+            binary_map(pool, bias.data, bias.data, grad_bias.data, bias.length(),
+                       [=](float b, float gb)
+                       { return b - lr * gb; });
 
             return grad_input;
         }
@@ -349,6 +405,12 @@ namespace NeuralNetwork
     {
         Tensor last_input;
 
+        void SetPool(ThreadPool *pool_) override
+        {
+            pool = pool_;
+            last_input.setPool(pool_);
+        }
+
         Tensor forward(const Tensor &input) override
         {
             last_input = input;
@@ -363,12 +425,20 @@ namespace NeuralNetwork
             Tensor grad_input = grad_output;
             binary_map(pool, grad_input.data, last_input.data, grad_output.data, grad_output.length(), [](float a, float b)
                        { return a > 0.f ? b : 0.f; });
+
+            return grad_input;
         }
     };
 
     struct Sigmoid : public Layer
     {
         Tensor last_output; // store for backward (since σ'(x) = σ(x)(1-σ(x)))
+
+        void SetPool(ThreadPool *pool_) override
+        {
+            pool = pool_;
+            last_output.setPool(pool_);
+        }
 
         Tensor forward(const Tensor &input) override
         {
@@ -394,6 +464,12 @@ namespace NeuralNetwork
     {
         Tensor last_input;
         float alpha;
+
+        void SetPool(ThreadPool *pool_) override
+        {
+            pool = pool_;
+            last_input.setPool(pool_);
+        }
 
         LeakyReLU(float alpha_ = 0.01f) : alpha(alpha_) {}
 
@@ -442,6 +518,10 @@ namespace NeuralNetwork
         void backward(const Tensor &grad_output, float lr)
         {
             Tensor grad = grad_output;
+            if (layers.size() == 0)
+            {
+                return;
+            }
             for (int i = layers.size() - 1; i >= 0; i--)
                 grad = layers[i]->backward(grad, lr);
         }
