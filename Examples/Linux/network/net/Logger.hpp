@@ -13,7 +13,7 @@ namespace dist
     {
         INFO,
         WARN,
-        ERROR,
+        ERR,
         DEBUG
     };
 
@@ -25,7 +25,7 @@ namespace dist
             return "INFO";
         case LogLevel::WARN:
             return "WARN";
-        case LogLevel::ERROR:
+        case LogLevel::ERR:
             return "ERROR";
         case LogLevel::DEBUG:
             return "DEBUG";
@@ -72,7 +72,7 @@ namespace dist
 
 #define LOG_INFO(...) ::dist::Logger::instance().log(::dist::LogLevel::INFO, __VA_ARGS__)
 #define LOG_WARN(...) ::dist::Logger::instance().log(::dist::LogLevel::WARN, __VA_ARGS__)
-#define LOG_ERROR(...) ::dist::Logger::instance().log(::dist::LogLevel::ERROR, __VA_ARGS__)
+#define LOG_ERROR(...) ::dist::Logger::instance().log(::dist::LogLevel::ERR, __VA_ARGS__)
 #ifdef NDEBUG
 #define LOG_DEBUG(...) ((void)0)
 #else

@@ -5,8 +5,8 @@
 #include <chrono>
 #include <functional>
 #include <thread>
-#include "Protocol.hpp"
-#include "Logger.hpp"
+#include "./Protocol.hpp"
+#include "./Logger.hpp"
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -14,6 +14,7 @@
 using socket_t = SOCKET;
 #ifndef SHUT_RDWR
 #define SHUT_RDWR SD_BOTH
+#define close closesocket
 #endif
 #else
 #include <sys/types.h>

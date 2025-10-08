@@ -1,5 +1,8 @@
 #include "MasterServer.hpp"
-#include "Logger.hpp"
+#include "./net/Logger.hpp"
+#include <string>
+#include <sstream>
+#include <iomanip>
 #include <cstring>
 
 #if defined(_WIN32)
@@ -317,6 +320,69 @@ namespace dist
                 std::this_thread::sleep_for(remaining);
         }
         LOG_INFO("Heartbeat loop exited");
+    }
+
+} // namespace dist
+
+namespace dist
+{
+
+    void MasterServer::on_client_connect(Connection c)
+    {
+        (void)c;
+        LOG_INFO("on_client_connect hook invoked (placeholder).");
+    }
+
+    void MasterServer::on_client_connected(Connection c)
+    {
+        // For compatibility, call the same hook.
+        on_client_connect(std::move(c));
+    }
+
+    void MasterServer::on_message(Connection &c, const std::string &payload)
+    {
+        (void)c;
+        (void)payload;
+        LOG_WARN("on_message hook not wired for binary Protocol; placeholder only.");
+    }
+
+    void MasterServer::print_resource_table()
+    {
+        auto snap = registry_.snapshot();
+        LOG_INFO("Resource summary for %zu nodes:", snap.size());
+        std::ostringstream oss;
+        oss << "\n+--------+---------------+-------------+---------+\n";
+        oss << "| socket | ip            | RAM(bytes)  | threads |\n";
+        oss << "+--------+---------------+-------------+---------+\n";
+        for (auto &kv : snap)
+        {
+            auto id = kv.first;
+            const auto &n = kv.second;
+            oss << "| " << std::setw(6) << int(id)
+                << " | " << std::setw(13) << n.ip
+                << " | " << std::setw(11) << n.ramBytes
+                << " | " << std::setw(7) << n.threads
+                << " |\n";
+        }
+        oss << "+--------+---------------+-------------+---------+\n";
+        LOG_INFO("%s", oss.str().c_str());
+    }
+
+    int MasterServer::get_total_layers_from_model() const
+    {
+        return 120; // placeholder
+    }
+
+    std::uint64_t MasterServer::get_bytes_per_layer() const
+    {
+        return 1ull * 1024ull * 1024ull; // 1 MB per layer (placeholder)
+    }
+
+    void MasterServer::compute_and_send_configs(int total_layers, std::uint64_t bytes_per_layer)
+    {
+        (void)total_layers;
+        (void)bytes_per_layer;
+        LOG_WARN("compute_and_send_configs is a placeholder; integrate your partitioner if needed.");
     }
 
 } // namespace dist
