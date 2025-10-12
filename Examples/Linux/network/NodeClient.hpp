@@ -4,8 +4,8 @@
 #include <vector>
 #include <optional>
 
-#include "./net/Connection.hpp" // your existing transport
-#include "./net/Protocol.hpp"   // your existing framing/tags
+#include "./net/Connection.hpp"
+#include "./net/Protocol.hpp"
 #include "./net/Logger.hpp"
 
 #include "../../Libraries/System_Info.hpp"

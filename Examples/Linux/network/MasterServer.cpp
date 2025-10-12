@@ -1,4 +1,4 @@
-#include "MasterServer.hpp"
+#include "./MasterServer.hpp"
 #include "./net/Logger.hpp"
 #include <string>
 #include <sstream>
