@@ -1,8 +1,0 @@
-cmake_minimum_required(VERSION 4.1)
-
-project(DistNeuralNetLinux)
-
-# add_executable(Master Master.cpp)
-# add_executable(Node Node.cpp)
-add_executable(SockerClient SocketClient.cpp)
-add_executable(SocketServer SocketServer.cpp)
